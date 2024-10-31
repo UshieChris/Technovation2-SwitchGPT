@@ -1,0 +1,168 @@
+﻿@using FinBot.Services
+@using Microsoft.SemanticKernel
+@using Microsoft.SemanticKernel.ChatCompletion
+@using System.Text.Json
+
+@inherits AppComponentBase
+
+@inject ApplicationDbContext _dbContext
+@inject MessageService _messageService
+@inject IChatCompletionService _chatCompletionService
+@inject PromptingService _promptingService
+
+
+
+<style scoped>
+    .bot-message {
+        background-color: lightgray;
+        padding: 10px;
+        margin: 5px;
+        max-width: 500px;
+        border-radius: 5px;
+        white-space: pre-wrap;
+    }
+
+    .human-message {
+        background-color: lightcyan;
+        padding: 10px;
+        margin: 5px;
+        max-width: 500px;
+        border-radius: 5px;
+        white-space: pre-line;
+    }
+
+    .send-container {
+        position: fixed;
+        bottom: 0px;
+        left: 0px;
+        width: 50%;
+    }
+
+        .send-container div {
+            display: flex;
+            gap: 7px;
+            margin-inline: 20px;
+            margin-bottom: 15px;
+        }
+</style>
+
+<div style="position: relative; height: 85%; overflow-y: auto;">
+    @foreach (var message in _chatMessages)
+    {
+        <div style="@($"margin-bottom: 10px; width: 100%; display: flex; justify-content: {(message.IsBotMessage ? "start" : "end")}")">
+            @if (message.IsBotMessage)
+            {
+                <div class="bot-message">
+                    <span>@message.Text</span>
+                </div>
+            }
+            else
+            {
+                <div class="human-message">
+                    <span>@message.Text</span>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="send-container">
+        <div @attributes="DisabledAttributes">
+            <RadzenTextBox @bind-Value="_message" Placeholder="Enter a message..." Style="width: 100%" />
+            <RadzenButton ButtonType="ButtonType.Button" Icon="send" Click="SendMessage" />
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public ApplicationUser? User { get; set; }
+
+    List<ChatMessage> _chatMessages = [];
+    string _message = "";
+
+    Dictionary<string, object> DisabledAttributes => User == null
+        ? new()
+          {
+            {"inert", "inert"},
+            {"style", "cursor: not-allowed; opacity: 0.5;"}
+          }
+        : new();
+
+
+    protected override void OnInitialized()
+    {
+        ObserveParameter(() => User)
+            .Subscribe(async _ => await LoadMessages());
+
+        _messageService.MessageStream.Subscribe(async message =>
+        {
+            if (User is null) return;
+            if (User.Id != message.Message.UserId) return;
+            if (message.ShouldUpdateUI == false) return;
+
+            _chatMessages.Add(message.Message);
+            await InvokeAsync(StateHasChanged);
+        });
+
+        // TODO: Ensure that only one happens per user per time.
+        _messageService.LLMOngoingMessageStream.Subscribe(async messageTuple =>
+        {
+            var (message, positon)  = messageTuple;
+
+            if (User is null) return;
+            if (User.Id != message.UserId) return;
+
+
+            // Flag incoming message chunks with ID of -1
+            if (positon == LLMResponseChunkPosition.Start)
+            {
+                message.Id = -1;
+                _chatMessages.Add(message);
+            }
+
+            // Update subsequent message chunks
+            if (positon == LLMResponseChunkPosition.Middle)
+            {
+                int index = _chatMessages.FindIndex(x => x.Id == message.Id);
+                _chatMessages[index].Text = message.Text;
+            }
+
+            // Remove the flag once message is complete
+            if (positon == LLMResponseChunkPosition.End)
+            {
+                int index = _chatMessages.FindIndex(x => x.Id == message.Id);
+                _chatMessages[index].Id = 0;
+            }
+            
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    async Task LoadMessages()
+    {
+        if (User is null)
+            return;
+
+        _chatMessages.Clear();
+        var messages = await _dbContext.ChatMessages
+            .Where(m => m.UserId == User.Id)
+            .OrderBy(m => m.TimeStamp)
+            .ToListAsync();
+        _chatMessages.AddRange(messages);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    void SendMessage()
+    {
+        var message = new ChatMessage
+        {
+            Text = _message,
+            UserId = User!.Id,
+            TimeStamp = DateTime.Now,
+            IsBotMessage = false
+        };
+
+        _messageService.MessageStream.OnNext((message, true));
+        _message = "";
+    }
+}

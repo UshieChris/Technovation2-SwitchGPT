@@ -1,0 +1,89 @@
+﻿@using TransactionModel = Data.Transaction
+
+@inject NotificationService _notificationService
+@inject ApplicationDbContext _dbContext
+
+<RadzenStack>
+    <RadzenTemplateForm Data="_transaction" Submit="async (TransactionModel d) => await AddTransaction()">
+        <RadzenRow>
+            <RadzenColumn>
+                <RadzenFormField Text="Transaction Type">
+                    <RadzenDropDown Name="transType" @bind-Value="_transaction.Type" Data="_allTransactionTypes" />
+                    <RadzenRequiredValidator Component="transType" />
+                </RadzenFormField>
+            </RadzenColumn>
+
+            <RadzenColumn>
+                <RadzenFormField Text="Narration">
+                    <RadzenTextBox Name="narration" @bind-Value="_transaction.Narration" />
+                    <RadzenCustomValidator Component="narration" Text="Cannot be empty"
+                                           Validator="() => string.IsNullOrWhiteSpace(_transaction.Narration) == false" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <RadzenRow>
+            <RadzenColumn>
+                <RadzenFormField Text="Amount">
+                    <RadzenNumeric Name="amount" @bind-Value="_transaction.Amount" />
+                    <RadzenNumericRangeValidator Component="amount" Min="1" Text="Must be greater than zero" />
+                </RadzenFormField>
+            </RadzenColumn>
+
+            <RadzenColumn>
+                <RadzenFormField Text="Timestamp">
+                    <RadzenDatePicker Name="timestamp" @bind-Value="_transaction.TimeStamp" />
+                    <RadzenCustomValidator Component="timestamp" Text="Must have a value"
+                                           Validator="@(() => _transaction.TimeStamp != default)" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <br />
+
+        <RadzenRow AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="Save Transaction" ButtonStyle="ButtonStyle.Success" />
+        </RadzenRow>
+    </RadzenTemplateForm>
+</RadzenStack>
+
+@code {
+
+    readonly List<TransactionType> _allTransactionTypes =
+    [
+        TransactionType.Debit,
+    TransactionType.Credit
+    ];
+
+    TransactionModel _transaction = new();
+
+    [Parameter]
+    public Transaction? TransactionRef { get; set; }
+
+    async Task AddTransaction()
+    {
+        if (TransactionRef is null)
+            return;
+
+        _dbContext.Transactions.Add(new TransactionModel
+        {
+            UserId = TransactionRef.User!.Id,
+            Type = _transaction.Type,
+            Narration = _transaction.Narration,
+            Amount = _transaction.Amount,
+            TimeStamp = _transaction.TimeStamp
+        });
+        
+        await _dbContext.SaveChangesAsync();
+        TransactionRef.LoadTransactions();
+
+        _notificationService.Notify(new()
+        {
+            Severity = NotificationSeverity.Success,
+            Summary = "Success",
+            Detail = "Transaction added successfully",
+            Duration = 5000
+        });
+    }
+
+}

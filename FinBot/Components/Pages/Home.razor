@@ -1,0 +1,68 @@
+﻿@page "/"
+@using FinBot.Data
+@using Microsoft.AspNetCore.Identity
+
+@inject UserManager<ApplicationUser> _userManager
+
+<PageTitle>FinBot</PageTitle>
+<style scoped>
+    #container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-block: 5px;
+    }
+
+    #sub-container {
+        display: flex;
+        flex-direction: row;
+        height: 100%;
+        width: 100%;
+        justify-items: start;
+    }
+
+    #dropdown {
+        display: flex;
+        gap: 30px;
+        justify-content: center;
+        margin-block: 10px;
+        align-items: center;
+    }
+
+    #horizontal-divider {
+        height: 2px;
+        width: 100%;
+        background: purple;
+    }
+</style>
+
+<div id="container" style="height: 100%;">
+    <div id="dropdown">
+        <h5>Select User:</h5>
+        <RadzenDropDown TValue="ApplicationUser" @bind-Value="_selectedUser" Data="_users" TextProperty="FullName" Style="width: 300px" />
+    </div>
+    <div id="horizontal-divider" />
+    <div id="sub-container">
+        <div style="width: 50%">
+            <Chat User="_selectedUser" />
+        </div>
+
+        <div style="width: 2px; background: purple; height: 100%;">
+        </div>
+
+        <div style="width: 50%">
+            <Transaction User="_selectedUser" />
+        </div>
+    </div>
+</div>
+
+
+@code {
+    List<ApplicationUser> _users = [];
+    ApplicationUser? _selectedUser;
+
+    protected override void OnInitialized()
+    {
+        _users = _userManager.Users.ToList();
+    }
+}

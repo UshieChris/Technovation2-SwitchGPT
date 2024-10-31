@@ -1,0 +1,108 @@
+﻿@inject ApplicationDbContext _dbContext
+@inject DialogService _dialogService
+
+<style scoped>
+    .transaction-item {
+        padding-inline: 7px;
+        border-radius: 5px;
+        margin: 10px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #simulate-btn {
+        position: fixed;
+        bottom: 0;
+        left: 75%;
+        transform: translate(-50%, 0);
+        margin-bottom: 10px;
+    }
+</style>
+
+<div style="position: relative; height: 85%; overflow-y: auto;">
+    <div style="display: flex; gap: 10px; justify-content: center; align-items: center; padding: 3px;">
+        <div>Balance: <strong>@_balance</strong></div>
+        <div> | </div>
+        <div>Number of transactions: <strong>@_transactions.Count</strong></div>
+    </div>
+
+    <div>
+        @foreach (var transaction in _transactions)
+        {
+            <div class="transaction-item" style="@GetTransactionColor(transaction)">
+                <div style="padding-top: 5px; font-size: small; color: white">
+                    @transaction.Type.ToString()
+                </div>
+
+                <div style="display:flex; justify-content: space-between; padding-block: 5px; color: white;">
+                    <span>@transaction.Narration</span>
+                    <span>₦@transaction.Amount</span>
+                </div>
+
+                <div style="margin-left: auto; font-size: small;padding-top: 3px; color: white; padding-bottom: 10px">
+                    <span>@transaction.TimeStamp</span>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div id="simulate-btn" @attributes="DisabledAttributes">
+        <RadzenButton Text="Launch Transaction Simulator" Click="LaunchTransactionModal" Size="ButtonSize.Medium" ButtonStyle="ButtonStyle.Success" />
+    </div>
+</div>
+
+@code {
+    List<Data.Transaction> _transactions = [];
+    decimal _balance;
+
+    [Parameter]
+    public ApplicationUser? User { get; set; }
+
+    string GetTransactionColor(Data.Transaction transaction) =>
+        $"background: {(transaction.Type == TransactionType.Credit ? "green" : "lightcoral")};";
+    
+    Dictionary<string, object> DisabledAttributes => User == null
+        ? new()
+          {
+            {"inert", "inert"},
+            {"style", "cursor: not-allowed; opacity: 0.5;"}
+          }
+        : new();
+
+    protected override void OnParametersSet()
+    {
+        LoadTransactions();
+    }
+
+    public void LoadTransactions()
+    {
+        if (User is null)
+            return;
+
+        _transactions = _dbContext.Transactions
+            .Where(x => x.UserId == User.Id)
+            .OrderByDescending(x => x.TimeStamp)
+            .ToList();
+
+        _balance = 0;
+        foreach (var transaction in _transactions)
+        {
+            _balance = transaction.Type switch
+            {
+                TransactionType.Credit => _balance + transaction.Amount,
+                TransactionType.Debit => _balance - transaction.Amount,
+                _ => _balance
+            };
+        }
+
+        StateHasChanged();
+    }
+
+    void LaunchTransactionModal()
+    {
+        _dialogService.Open<AddTransactionModal>("Add New Transaction", parameters: new()
+        {
+            { "TransactionRef", this}
+        });
+    }
+}
